@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   AlertCircle,
   CheckCircle2,
@@ -35,8 +36,13 @@ import {
   UserCheck,
   XSquare,
   RotateCcw,
+  MessageSquare,
+  Brain,
+  Sparkles,
+  CheckSquare,
+  AlertTriangle,
 } from "lucide-react";
-import type { Finding, BlumiraUser } from "@/lib/blumira-api";
+import type { Finding, BlumiraUser, FindingComment, Resolution } from "@/lib/blumira-api";
 import {
   getAnnotation,
   addNote,
@@ -169,6 +175,283 @@ function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: strin
   );
 }
 
+function AnalysisPanel({
+  finding,
+  comments,
+  resolutions,
+  loadingAnalysis,
+  analysisError,
+  onCommentAdded,
+  onFindingResolved,
+}: {
+  finding: Finding;
+  comments: FindingComment[];
+  resolutions: Resolution[];
+  loadingAnalysis: boolean;
+  analysisError: string | null;
+  onCommentAdded: () => void;
+  onFindingResolved: () => void;
+}) {
+  const [newComment, setNewComment] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [showResolve, setShowResolve] = useState(false);
+  const [selectedResolution, setSelectedResolution] = useState<number | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState("");
+  const [submittingResolve, setSubmittingResolve] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const handleSubmitComment = async () => {
+    if (!newComment.trim()) return;
+    setSubmittingComment(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch("/api/blumira/findings/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: finding.org_id,
+          findingId: finding.finding_id,
+          comment: newComment.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add comment");
+      setNewComment("");
+      setActionSuccess("Comment added to Blumira");
+      onCommentAdded();
+      setTimeout(() => setActionSuccess(null), 3000);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to add comment");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const handleResolve = async () => {
+    if (!selectedResolution) return;
+    setSubmittingResolve(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch("/api/blumira/findings/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: finding.org_id,
+          findingId: finding.finding_id,
+          resolution: selectedResolution,
+          resolutionNotes: resolutionNotes.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to resolve finding");
+      setShowResolve(false);
+      setSelectedResolution(null);
+      setResolutionNotes("");
+      setActionSuccess("Finding resolved in Blumira");
+      onFindingResolved();
+      setTimeout(() => setActionSuccess(null), 3000);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to resolve finding");
+    } finally {
+      setSubmittingResolve(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Brain className="h-4 w-4 text-purple-500" />
+        <h4 className="text-sm font-semibold">Finding Analysis</h4>
+        <Badge variant="info" className="text-[10px] gap-1">
+          <Sparkles className="h-2.5 w-2.5" />
+          MCP Integrated
+        </Badge>
+      </div>
+
+      {loadingAnalysis && (
+        <div className="flex items-center justify-center py-6 bg-muted/20 rounded-lg border border-dashed">
+          <Loader2 className="h-5 w-5 animate-spin text-purple-400" />
+          <span className="ml-2 text-sm text-muted-foreground">Loading analysis data...</span>
+        </div>
+      )}
+
+      {analysisError && (
+        <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-amber-400 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{analysisError}</span>
+        </div>
+      )}
+
+      {!loadingAnalysis && !analysisError && (
+        <>
+          {finding.summary && (
+            <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Executive Summary</span>
+              </div>
+              <p className="text-sm leading-relaxed">{finding.summary}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() => setShowResolve(!showResolve)} className="border-purple-500/30 hover:bg-purple-500/10">
+              <CheckSquare className="h-3.5 w-3.5 mr-1.5 text-purple-500" />
+              Resolve in Blumira
+            </Button>
+          </div>
+
+          {showResolve && (
+            <div className="rounded-lg border border-purple-500/20 bg-muted/30 p-4 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Resolve Finding</p>
+              <div className="grid grid-cols-2 gap-2">
+                {resolutions.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedResolution(r.id)}
+                    className={`text-left px-3 py-2 rounded-md border text-sm transition-colors ${
+                      selectedResolution === r.id
+                        ? "border-purple-500 bg-purple-500/10 text-purple-300"
+                        : "border-border hover:border-purple-500/30 hover:bg-muted/50"
+                    }`}
+                  >
+                    <span className="font-medium">{r.name}</span>
+                    <span className="text-xs text-muted-foreground block">ID: {r.id}</span>
+                  </button>
+                ))}
+              </div>
+              <Textarea
+                placeholder="Resolution notes (optional)..."
+                value={resolutionNotes}
+                onChange={(e) => setResolutionNotes(e.target.value)}
+                rows={2}
+                className="text-sm"
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleResolve}
+                  disabled={!selectedResolution || submittingResolve}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  {submittingResolve ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <CheckSquare className="h-3.5 w-3.5 mr-1.5" />}
+                  {submittingResolve ? "Resolving..." : "Confirm Resolution"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setShowResolve(false); setSelectedResolution(null); setResolutionNotes(""); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {actionError && (
+            <div className="flex items-center gap-2 p-2 rounded-md border border-red-500/30 bg-red-500/5 text-red-400 text-xs">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              {actionError}
+            </div>
+          )}
+
+          {actionSuccess && (
+            <div className="flex items-center gap-2 p-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 text-emerald-400 text-xs">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              {actionSuccess}
+            </div>
+          )}
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-blue-500" />
+              <h4 className="text-sm font-semibold">Investigation Comments</h4>
+              {comments.length > 0 && (
+                <Badge variant="secondary" className="text-[10px]">{comments.length}</Badge>
+              )}
+            </div>
+
+            {comments.length > 0 ? (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {comments.map((comment, i) => {
+                  const senderName = comment.sender
+                    ? `${comment.sender.first_name || ""} ${comment.sender.last_name || ""}`.trim() || comment.sender.email || "Unknown"
+                    : "Unknown";
+                  return (
+                    <div key={comment.id || i} className="rounded-lg border p-3 text-sm bg-muted/20">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20 text-[10px] font-medium text-blue-400">
+                            {senderName.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-xs font-medium">{senderName}</span>
+                        </div>
+                        {comment.age !== undefined && (
+                          <span className="text-xs text-muted-foreground">
+                            {comment.age < 3600
+                              ? `${Math.floor(comment.age / 60)}m ago`
+                              : comment.age < 86400
+                              ? `${Math.floor(comment.age / 3600)}h ago`
+                              : `${Math.floor(comment.age / 86400)}d ago`}
+                          </span>
+                        )}
+                        {!comment.age && comment.created && (
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(comment.created), { addSuffix: true })}
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert max-w-none"
+                        dangerouslySetInnerHTML={{ __html: comment.body }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground py-3 text-center bg-muted/10 rounded-lg border border-dashed">
+                No investigation comments yet
+              </p>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Add comment to Blumira</p>
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Add an investigation comment..."
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  rows={2}
+                  className="flex-1 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleSubmitComment();
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  className="self-end bg-blue-600 hover:bg-blue-700"
+                  onClick={handleSubmitComment}
+                  disabled={!newComment.trim() || submittingComment}
+                >
+                  {submittingComment ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Press Ctrl+Enter to send. Comments are posted to Blumira via API.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function FindingDetailDialog({
   finding,
   open,
@@ -183,11 +466,36 @@ export function FindingDetailDialog({
   const [assigneeInput, setAssigneeInput] = useState("");
   const [showAssignee, setShowAssignee] = useState(false);
 
+  const [comments, setComments] = useState<FindingComment[]>([]);
+  const [resolutions, setResolutions] = useState<Resolution[]>([]);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
   const reload = useCallback(() => {
     if (!finding) return;
     setAnnotation(getAnnotation(finding.finding_id));
     onAnnotationChange?.();
   }, [finding, onAnnotationChange]);
+
+  const fetchAnalysis = useCallback((f: Finding) => {
+    setLoadingAnalysis(true);
+    setAnalysisError(null);
+    fetch(`/api/blumira/findings/analysis?accountId=${f.org_id}&findingId=${f.finding_id}`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.error) {
+          setAnalysisError(res.error);
+        } else {
+          if (res.finding) setDetailData(res.finding);
+          if (res.comments) setComments(res.comments);
+          if (res.resolutions) setResolutions(res.resolutions);
+        }
+      })
+      .catch((err) => {
+        setAnalysisError(err instanceof Error ? err.message : "Failed to load analysis");
+      })
+      .finally(() => setLoadingAnalysis(false));
+  }, []);
 
   useEffect(() => {
     if (finding && open) {
@@ -196,17 +504,17 @@ export function FindingDetailDialog({
       setAssigneeInput(a?.assignee || "");
       setNewNote("");
       setShowAssignee(false);
+      setComments([]);
+      setResolutions([]);
+      setAnalysisError(null);
 
-      setLoadingDetail(true);
-      fetch(`/api/blumira/findings?accountId=${finding.org_id}&findingId=${finding.finding_id}`)
-        .then((r) => r.json())
-        .then((res) => { if (res.data) setDetailData(res.data); })
-        .catch(() => {})
-        .finally(() => setLoadingDetail(false));
+      fetchAnalysis(finding);
     } else {
       setDetailData(null);
+      setComments([]);
+      setResolutions([]);
     }
-  }, [finding, open]);
+  }, [finding, open, fetchAnalysis]);
 
   const handleAddNote = useCallback(() => {
     if (!finding || !newNote.trim()) return;
@@ -231,7 +539,7 @@ export function FindingDetailDialog({
 
   const handleClose = useCallback(() => {
     if (!finding) return;
-    const updated = setLocalStatus(finding.finding_id, "closed");
+    setLocalStatus(finding.finding_id, "closed");
     addNote(finding.finding_id, "Marked as closed from dashboard", "System");
     setAnnotation(getAnnotation(finding.finding_id));
     onAnnotationChange?.();
@@ -253,6 +561,14 @@ export function FindingDetailDialog({
     onAnnotationChange?.();
   }, [finding, onAnnotationChange]);
 
+  const handleCommentAdded = useCallback(() => {
+    if (finding) fetchAnalysis(finding);
+  }, [finding, fetchAnalysis]);
+
+  const handleFindingResolved = useCallback(() => {
+    if (finding) fetchAnalysis(finding);
+  }, [finding, fetchAnalysis]);
+
   if (!finding) return null;
 
   const detail = detailData || finding;
@@ -261,7 +577,7 @@ export function FindingDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="space-y-2">
             <DialogTitle className="text-lg leading-tight pr-8">
@@ -335,78 +651,111 @@ export function FindingDetailDialog({
           </div>
         )}
 
-        <div className="space-y-4">
-            {loadingDetail && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-sm text-muted-foreground">Loading details...</span>
-              </div>
-            )}
-
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-1">
-              <DetailRow icon={<Building2 className="h-4 w-4" />} label="Organization" value={detail.org_name} />
-              <DetailRow icon={<Tag className="h-4 w-4" />} label="Type" value={detail.type_name} />
-              {detail.category && (
-                <DetailRow icon={<Tag className="h-4 w-4" />} label="Category"
-                  value={<span>{detail.category}{detail.subcategory && ` / ${detail.subcategory}`}</span>} />
+        <Tabs defaultValue="analysis" className="w-full">
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="analysis" className="gap-1.5">
+              <Brain className="h-3.5 w-3.5" />
+              Analysis
+            </TabsTrigger>
+            <TabsTrigger value="details" className="gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              Details
+            </TabsTrigger>
+            <TabsTrigger value="notes" className="gap-1.5">
+              <StickyNote className="h-3.5 w-3.5" />
+              Notes
+              {annotation?.notes && annotation.notes.length > 0 && (
+                <Badge variant="secondary" className="text-[10px] ml-1">{annotation.notes.length}</Badge>
               )}
-              {detail.source && <DetailRow icon={<Eye className="h-4 w-4" />} label="Source" value={detail.source} />}
-              <DetailRow icon={<Clock className="h-4 w-4" />} label="Created"
-                value={
-                  <span>
-                    {format(new Date(detail.created), "MMM d, yyyy 'at' h:mm a")}
-                    <span className="text-muted-foreground ml-2">({formatDistanceToNow(new Date(detail.created), { addSuffix: true })})</span>
-                  </span>
-                } />
-              {detail.modified && (
-                <DetailRow icon={<Clock className="h-4 w-4" />} label="Modified"
-                  value={<span>{format(new Date(detail.modified), "MMM d, yyyy 'at' h:mm a")}</span>} />
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="analysis">
+            <AnalysisPanel
+              finding={finding}
+              comments={comments}
+              resolutions={resolutions}
+              loadingAnalysis={loadingAnalysis}
+              analysisError={analysisError}
+              onCommentAdded={handleCommentAdded}
+              onFindingResolved={handleFindingResolved}
+            />
+          </TabsContent>
+
+          <TabsContent value="details">
+            <div className="space-y-4">
+              {loadingAnalysis && !detailData && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading details...</span>
+                </div>
               )}
-              {detail.resolution_name && <DetailRow icon={<CheckCircle2 className="h-4 w-4" />} label="Resolution" value={detail.resolution_name} />}
-            </div>
 
-            {(detail.description || detail.summary || detail.evidence) && (
-              <div className="space-y-3">
-                {detail.summary && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" />Summary</h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3">{detail.summary}</p>
-                  </div>
-                )}
-                {detail.description && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" />Description</h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3 whitespace-pre-wrap">{detail.description}</p>
-                  </div>
-                )}
-                {detail.evidence && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1 flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />Evidence</h4>
-                    <pre className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono">{detail.evidence}</pre>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {(detail.ip_address || detail.hostname || detail.url || detail.user || detail.workflow_name || detail.rule_name || detail.detector_name) && (
               <div className="rounded-lg border bg-muted/30 p-4 space-y-1">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Technical Details</h4>
-                {detail.ip_address && <DetailRow icon={<Globe className="h-4 w-4" />} label="IP Address" value={<code className="text-xs bg-muted rounded px-1.5 py-0.5">{detail.ip_address}</code>} />}
-                {detail.hostname && <DetailRow icon={<Server className="h-4 w-4" />} label="Hostname" value={<code className="text-xs bg-muted rounded px-1.5 py-0.5">{detail.hostname}</code>} />}
-                {detail.url && <DetailRow icon={<Globe className="h-4 w-4" />} label="URL" value={<a href={detail.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all text-xs">{detail.url}</a>} />}
-                {detail.user && <DetailRow icon={<User className="h-4 w-4" />} label="User" value={detail.user} />}
-                {detail.workflow_name && <DetailRow icon={<Workflow className="h-4 w-4" />} label="Workflow" value={detail.workflow_name} />}
-                {detail.rule_name && <DetailRow icon={<Shield className="h-4 w-4" />} label="Rule" value={detail.rule_name} />}
-                {detail.detector_name && <DetailRow icon={<Eye className="h-4 w-4" />} label="Detector" value={detail.detector_name} />}
+                <DetailRow icon={<Building2 className="h-4 w-4" />} label="Organization" value={detail.org_name} />
+                <DetailRow icon={<Tag className="h-4 w-4" />} label="Type" value={detail.type_name} />
+                {detail.category && (
+                  <DetailRow icon={<Tag className="h-4 w-4" />} label="Category"
+                    value={<span>{detail.category}{detail.subcategory && ` / ${detail.subcategory}`}</span>} />
+                )}
+                {detail.source && <DetailRow icon={<Eye className="h-4 w-4" />} label="Source" value={detail.source} />}
+                <DetailRow icon={<Clock className="h-4 w-4" />} label="Created"
+                  value={
+                    <span>
+                      {format(new Date(detail.created), "MMM d, yyyy 'at' h:mm a")}
+                      <span className="text-muted-foreground ml-2">({formatDistanceToNow(new Date(detail.created), { addSuffix: true })})</span>
+                    </span>
+                  } />
+                {detail.modified && (
+                  <DetailRow icon={<Clock className="h-4 w-4" />} label="Modified"
+                    value={<span>{format(new Date(detail.modified), "MMM d, yyyy 'at' h:mm a")}</span>} />
+                )}
+                {detail.resolution_name && <DetailRow icon={<CheckCircle2 className="h-4 w-4" />} label="Resolution" value={detail.resolution_name} />}
               </div>
-            )}
 
-            <Separator />
+              {(detail.description || detail.summary || detail.evidence) && (
+                <div className="space-y-3">
+                  {detail.summary && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" />Summary</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3">{detail.summary}</p>
+                    </div>
+                  )}
+                  {detail.description && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" />Description</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-lg p-3 whitespace-pre-wrap">{detail.description}</p>
+                    </div>
+                  )}
+                  {detail.evidence && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-1 flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />Evidence</h4>
+                      <pre className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono">{detail.evidence}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
 
+              {(detail.ip_address || detail.hostname || detail.url || detail.user || detail.workflow_name || detail.rule_name || detail.detector_name) && (
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-1">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Technical Details</h4>
+                  {detail.ip_address && <DetailRow icon={<Globe className="h-4 w-4" />} label="IP Address" value={<code className="text-xs bg-muted rounded px-1.5 py-0.5">{detail.ip_address}</code>} />}
+                  {detail.hostname && <DetailRow icon={<Server className="h-4 w-4" />} label="Hostname" value={<code className="text-xs bg-muted rounded px-1.5 py-0.5">{detail.hostname}</code>} />}
+                  {detail.url && <DetailRow icon={<Globe className="h-4 w-4" />} label="URL" value={<a href={detail.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all text-xs">{detail.url}</a>} />}
+                  {detail.user && <DetailRow icon={<User className="h-4 w-4" />} label="User" value={detail.user} />}
+                  {detail.workflow_name && <DetailRow icon={<Workflow className="h-4 w-4" />} label="Workflow" value={detail.workflow_name} />}
+                  {detail.rule_name && <DetailRow icon={<Shield className="h-4 w-4" />} label="Rule" value={detail.rule_name} />}
+                  {detail.detector_name && <DetailRow icon={<Eye className="h-4 w-4" />} label="Detector" value={detail.detector_name} />}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="notes">
             <div className="space-y-3">
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 <StickyNote className="h-4 w-4 text-blue-600" />
-                Notes
+                Local Notes
                 {annotation?.notes && annotation.notes.length > 0 && (
                   <Badge variant="secondary" className="text-[10px]">{annotation.notes.length}</Badge>
                 )}
@@ -450,7 +799,8 @@ export function FindingDetailDialog({
               </div>
               <p className="text-xs text-muted-foreground">Press Ctrl+Enter to send. Notes are stored locally in your browser.</p>
             </div>
-          </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
