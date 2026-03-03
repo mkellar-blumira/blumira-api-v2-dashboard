@@ -12,17 +12,62 @@ export function setRuntimeDemoMode(value: boolean) {
   runtimeDemoMode = value;
 }
 
+async function testCredentials(clientId: string, clientSecret: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await fetch("https://auth.blumira.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        grant_type: "client_credentials",
+        client_id: clientId,
+        client_secret: clientSecret,
+        audience: "public-api",
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return { ok: false, error: `Authentication failed (${response.status}): ${text}` };
+    }
+
+    const data = await response.json();
+    if (!data.access_token) {
+      return { ok: false, error: "No access token in response" };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Connection failed" };
+  }
+}
+
 export async function GET() {
-  const hasClientId = !!process.env.BLUMIRA_CLIENT_ID;
-  const hasClientSecret = !!process.env.BLUMIRA_CLIENT_SECRET;
+  const clientId = process.env.BLUMIRA_CLIENT_ID || "";
+  const clientSecret = process.env.BLUMIRA_CLIENT_SECRET || "";
+  const hasClientId = !!clientId;
+  const hasClientSecret = !!clientSecret;
+  const hasCredentials = hasClientId && hasClientSecret;
   const demoMode = getRuntimeDemoMode();
 
+  let connectionStatus: "connected" | "auth_failed" | "none" = "none";
+  let connectionError: string | undefined;
+
+  if (hasCredentials && !demoMode) {
+    const result = await testCredentials(clientId, clientSecret);
+    connectionStatus = result.ok ? "connected" : "auth_failed";
+    connectionError = result.error;
+  } else if (hasCredentials && demoMode) {
+    connectionStatus = "connected";
+  }
+
   return NextResponse.json({
-    hasCredentials: hasClientId && hasClientSecret,
+    hasCredentials,
     hasClientId,
     hasClientSecret,
     demoMode,
-    dataSource: demoMode ? "demo" : hasClientId && hasClientSecret ? "live" : "none",
+    connectionStatus,
+    connectionError,
+    dataSource: demoMode ? "demo" : connectionStatus === "connected" ? "live" : hasCredentials ? "error" : "none",
     environment: {
       demoModeEnv: process.env.DEMO_MODE || "false",
       hasClientIdEnv: hasClientId,
@@ -95,7 +140,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "Credentials validated and set for this session",
+      message: "Credentials validated and saved successfully",
     });
   } catch (error) {
     return NextResponse.json(

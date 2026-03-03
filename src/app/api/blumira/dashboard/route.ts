@@ -26,6 +26,7 @@ export async function GET() {
       findings,
       users,
       demoMode: true,
+      hasCredentials: !!(process.env.BLUMIRA_CLIENT_ID && process.env.BLUMIRA_CLIENT_SECRET),
       meta: {
         accountsCount: accounts.length,
         findingsCount: findings.length,
@@ -38,13 +39,15 @@ export async function GET() {
 
   const hasClientId = !!process.env.BLUMIRA_CLIENT_ID;
   const hasClientSecret = !!process.env.BLUMIRA_CLIENT_SECRET;
+  const hasCredentials = hasClientId && hasClientSecret;
 
-  if (!hasClientId || !hasClientSecret) {
+  if (!hasCredentials) {
     return NextResponse.json({
       accounts: [],
       findings: [],
       users: [],
       requiresAuth: true,
+      hasCredentials: false,
       meta: { accountsCount: 0, findingsCount: 0, usersCount: 0, timestamp: new Date().toISOString() },
     });
   }
@@ -93,6 +96,7 @@ export async function GET() {
       accounts,
       findings,
       users,
+      hasCredentials: true,
       meta: {
         accountsCount: accounts.length,
         findingsCount: findings.length,
@@ -105,19 +109,13 @@ export async function GET() {
     const message =
       error instanceof Error ? error.message : "An unknown error occurred";
 
-    if (message.includes("Authentication failed")) {
-      return NextResponse.json({
-        accounts: [],
-        findings: [],
-        users: [],
-        authError: message,
-        meta: { accountsCount: 0, findingsCount: 0, usersCount: 0, timestamp: new Date().toISOString() },
-      });
-    }
-
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      accounts: [],
+      findings: [],
+      users: [],
+      hasCredentials: true,
+      authError: message,
+      meta: { accountsCount: 0, findingsCount: 0, usersCount: 0, timestamp: new Date().toISOString() },
+    });
   }
 }

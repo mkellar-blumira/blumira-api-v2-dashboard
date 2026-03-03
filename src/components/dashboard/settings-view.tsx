@@ -36,7 +36,9 @@ interface CredentialsStatus {
   hasClientId: boolean;
   hasClientSecret: boolean;
   demoMode: boolean;
-  dataSource: "demo" | "live" | "none";
+  connectionStatus: "connected" | "auth_failed" | "none";
+  connectionError?: string;
+  dataSource: "demo" | "live" | "error" | "none";
   environment: {
     demoModeEnv: string;
     hasClientIdEnv: boolean;
@@ -169,6 +171,8 @@ export function SettingsView({ onDemoModeChange }: SettingsViewProps) {
                   <FlaskConical className="h-6 w-6 text-purple-400" />
                 ) : status.dataSource === "live" ? (
                   <Server className="h-6 w-6 text-emerald-400" />
+                ) : status.dataSource === "error" ? (
+                  <AlertTriangle className="h-6 w-6 text-red-400" />
                 ) : (
                   <AlertTriangle className="h-6 w-6 text-amber-400" />
                 )}
@@ -178,14 +182,18 @@ export function SettingsView({ onDemoModeChange }: SettingsViewProps) {
                       ? "Demo Mode Active"
                       : status.dataSource === "live"
                         ? "Live API Connected"
-                        : "No Data Source"}
+                        : status.dataSource === "error"
+                          ? "Authentication Failed"
+                          : "No Data Source"}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {status.dataSource === "demo"
                       ? "Displaying synthetic data for testing and exploration"
                       : status.dataSource === "live"
                         ? "Fetching real-time data from the Blumira API"
-                        : "Configure credentials or enable demo mode to get started"}
+                        : status.dataSource === "error"
+                          ? "Credentials are configured but authentication failed — check your Client ID and Secret below"
+                          : "Configure credentials or enable demo mode to get started"}
                   </p>
                 </div>
                 <Badge
@@ -194,16 +202,27 @@ export function SettingsView({ onDemoModeChange }: SettingsViewProps) {
                       ? "secondary"
                       : status.dataSource === "live"
                         ? "success"
-                        : "warning"
+                        : status.dataSource === "error"
+                          ? "destructive"
+                          : "warning"
                   }
                 >
                   {status.dataSource === "demo"
                     ? "Demo"
                     : status.dataSource === "live"
                       ? "Live"
-                      : "Inactive"}
+                      : status.dataSource === "error"
+                        ? "Error"
+                        : "Inactive"}
                 </Badge>
               </div>
+
+              {status.connectionError && (
+                <div className="flex items-center gap-2 p-3 rounded-lg border border-red-500/30 bg-red-500/5 text-red-400 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span className="text-xs break-all">{status.connectionError}</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3 rounded-lg border space-y-1.5">
@@ -306,27 +325,33 @@ export function SettingsView({ onDemoModeChange }: SettingsViewProps) {
             <div className="space-y-3">
               <h4 className="text-sm font-medium">Connection Status</h4>
               <div className="flex items-center gap-3 p-3 rounded-lg border">
-                {status.hasCredentials ? (
+                {status.connectionStatus === "connected" ? (
                   <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                ) : status.connectionStatus === "auth_failed" ? (
+                  <AlertTriangle className="h-5 w-5 text-red-400" />
                 ) : (
                   <AlertTriangle className="h-5 w-5 text-amber-400" />
                 )}
                 <div className="flex-1">
                   <p className="text-sm font-medium">
-                    {status.hasCredentials
+                    {status.connectionStatus === "connected"
                       ? "Connected"
-                      : "Not configured"}
+                      : status.connectionStatus === "auth_failed"
+                        ? "Authentication Failed"
+                        : "Not configured"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {status.hasCredentials
-                      ? "API credentials are set and ready"
-                      : "Enter your credentials to get started"}
+                    {status.connectionStatus === "connected"
+                      ? "API credentials are validated and working"
+                      : status.connectionStatus === "auth_failed"
+                        ? "Credentials are set but could not authenticate — re-enter them below"
+                        : "Enter your credentials to get started"}
                   </p>
                 </div>
                 <Badge
-                  variant={status.hasCredentials ? "success" : "warning"}
+                  variant={status.connectionStatus === "connected" ? "success" : status.connectionStatus === "auth_failed" ? "destructive" : "warning"}
                 >
-                  {status.hasCredentials ? "Active" : "Inactive"}
+                  {status.connectionStatus === "connected" ? "Active" : status.connectionStatus === "auth_failed" ? "Failed" : "Inactive"}
                 </Badge>
               </div>
 

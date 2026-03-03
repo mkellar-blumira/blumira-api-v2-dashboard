@@ -28,6 +28,8 @@ interface DashboardData {
   users: BlumiraUser[];
   meta?: { timestamp: string; dataSource?: string };
   demoMode?: boolean;
+  requiresAuth?: boolean;
+  hasCredentials?: boolean;
   authError?: string;
 }
 
@@ -38,7 +40,6 @@ export function DashboardShell() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [credentialsMissing, setCredentialsMissing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [demoMode, setDemoMode] = useState(false);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
@@ -46,7 +47,6 @@ export function DashboardShell() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      setCredentialsMissing(false);
       const res = await fetch("/api/blumira/dashboard");
       const result = await res.json();
 
@@ -59,10 +59,6 @@ export function DashboardShell() {
         setDemoBannerDismissed(false);
       } else {
         setDemoMode(false);
-      }
-
-      if (result.requiresAuth) {
-        setCredentialsMissing(true);
       }
 
       setData(result);
@@ -99,7 +95,6 @@ export function DashboardShell() {
       });
       if (res.ok) {
         setDemoMode(true);
-        setCredentialsMissing(false);
         setLoading(true);
         fetchData();
       }
@@ -110,6 +105,9 @@ export function DashboardShell() {
 
   const findings = data?.findings || [];
   const criticalCount = findings.filter((f) => f.priority === 1).length;
+
+  const needsSetup = !demoMode && (data?.requiresAuth || data?.authError);
+  const hasNoData = !loading && findings.length === 0 && (data?.accounts?.length || 0) === 0 && !demoMode;
 
   if (loading) {
     return (
@@ -126,77 +124,6 @@ export function DashboardShell() {
             </p>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (credentialsMissing) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background p-4">
-        <Card className="max-w-md w-full border-amber-500/30">
-          <CardContent className="p-8 text-center space-y-4">
-            <div className="flex justify-center">
-              <div className="rounded-full bg-amber-500/10 p-4">
-                <AlertTriangle className="h-8 w-8 text-amber-400" />
-              </div>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold">
-                API Credentials Required
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Configure your Blumira API credentials to access the MSP
-                Dashboard, or try demo mode to explore with sample data.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button onClick={() => { setActiveView("settings"); setCredentialsMissing(false); setError(null); }}>
-                <Settings className="h-4 w-4 mr-2" />
-                Configure Credentials
-              </Button>
-              <Button variant="outline" onClick={handleEnableDemo}>
-                <FlaskConical className="h-4 w-4 mr-2" />
-                Try Demo Mode
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background p-4">
-        <Card className="max-w-md w-full border-red-500/30">
-          <CardContent className="p-8 text-center space-y-4">
-            <div className="flex justify-center">
-              <div className="rounded-full bg-red-500/10 p-4">
-                <AlertTriangle className="h-8 w-8 text-red-400" />
-              </div>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold">Connection Error</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                {error}
-              </p>
-            </div>
-            <div className="flex gap-2 justify-center">
-              <Button variant="outline" onClick={handleRefresh}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
-              </Button>
-              <Button variant="outline" onClick={handleEnableDemo}>
-                <FlaskConical className="h-4 w-4 mr-2" />
-                Try Demo Mode
-              </Button>
-              <Button onClick={() => { setActiveView("settings"); setError(null); }}>
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }
@@ -245,13 +172,50 @@ export function DashboardShell() {
               >
                 Check Settings
               </button>{" "}
-              to verify your credentials, or{" "}
+              to update your credentials, or{" "}
               <button
                 className="underline hover:text-amber-200 transition-colors"
                 onClick={handleEnableDemo}
               >
                 try demo mode
               </button>.
+            </span>
+          </div>
+        )}
+
+        {data?.requiresAuth && !demoMode && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="flex-1">
+              No API credentials configured.{" "}
+              <button
+                className="underline hover:text-amber-200 transition-colors"
+                onClick={() => setActiveView("settings")}
+              >
+                Go to Settings
+              </button>{" "}
+              to enter your Blumira credentials, or{" "}
+              <button
+                className="underline hover:text-amber-200 transition-colors"
+                onClick={handleEnableDemo}
+              >
+                try demo mode
+              </button>.
+            </span>
+          </div>
+        )}
+
+        {error && !data && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-300 text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="flex-1">
+              {error}{" "}
+              <button
+                className="underline hover:text-red-200 transition-colors"
+                onClick={handleRefresh}
+              >
+                Retry
+              </button>
             </span>
           </div>
         )}
@@ -266,7 +230,40 @@ export function DashboardShell() {
         />
 
         <main className="flex-1 overflow-y-auto">
-          {activeView === "overview" && (
+          {activeView === "overview" && needsSetup && (
+            <div className="p-6">
+              <Card className="max-w-lg mx-auto border-amber-500/30">
+                <CardContent className="p-8 text-center space-y-4">
+                  <div className="flex justify-center">
+                    <div className="rounded-full bg-amber-500/10 p-4">
+                      <Shield className="h-8 w-8 text-amber-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold">
+                      {data?.authError ? "Authentication Failed" : "Get Started"}
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {data?.authError
+                        ? "Your API credentials are configured but authentication failed. Go to Settings to verify or re-enter them."
+                        : "Configure your Blumira API credentials in Settings to load your MSP data, or try demo mode to explore the dashboard."}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Button onClick={() => setActiveView("settings")}>
+                      <Settings className="h-4 w-4 mr-2" />
+                      {data?.authError ? "Fix in Settings" : "Go to Settings"}
+                    </Button>
+                    <Button variant="outline" onClick={handleEnableDemo}>
+                      <FlaskConical className="h-4 w-4 mr-2" />
+                      Try Demo Mode
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          {activeView === "overview" && !needsSetup && (
             <OverviewView
               findings={findings}
               accountCount={data?.accounts?.length || 0}
